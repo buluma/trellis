@@ -6,11 +6,14 @@ ENVIRONMENTS=( "${ENVIRONMENTS[@]##*/}" )
 
 show_usage() {
   echo "Usage: deploy <environment> <site name> [options]
+
 <environment> is the environment to deploy to ("staging", "production", etc)
 <site name> is the WordPress site to deploy (name defined in "wordpress_sites")
 [options] is any number of parameters that will be passed to ansible-playbook
+
 Available environments:
 `( IFS=$'\n'; echo "${ENVIRONMENTS[*]}" )`
+
 Examples:
   deploy staging example.com
   deploy production example.com

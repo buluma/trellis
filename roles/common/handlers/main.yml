@@ -1,12 +1,15 @@
 ---
-- name: restart hhvm
-  service: name=hhvm state=restarted
+- name: disable temporary challenge sites
+  import_tasks: disable_challenge_sites.yml
 
 - name: restart memcached
-  service: name=memcached state=restarted
-
-- name: reload nginx
-  service: name=nginx state=reloaded
+  service:
+    name: memcached
+    state: restarted
 
 - name: reload php-fpm
-  service: name=php5-fpm state=reloaded
+  service:
+    name: php7.2-fpm
+    state: reloaded
+
+- import_tasks: reload_nginx.yml

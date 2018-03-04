@@ -1,47 +1,71 @@
 ---
 - name: Add Nginx PPA
-  apt_repository: repo="ppa:nginx/stable" update_cache=yes
+  apt_repository:
+    repo: "{{ nginx_ppa }}"
+    update_cache: yes
 
 - name: Install Nginx
-  apt: name=nginx state=present force=yes
+  apt:
+    name: "{{ nginx_package }}"
+    state: "{{ nginx_package_state | default(apt_package_state) }}"
+    cache_valid_time: "{{ apt_cache_valid_time }}"
 
 - name: Create SSL directory
-  file: dest=/etc/nginx/ssl state=directory
+  file:
+    mode: 0700
+    path: "{{ nginx_path }}/ssl"
+    state: directory
 
 - name: Generate strong unique Diffie-Hellman group.
   command: openssl dhparam -out dhparams.pem 2048
   args:
-    chdir: /etc/nginx/ssl/
-    creates: /etc/nginx/ssl/dhparams.pem
+    chdir: "{{ nginx_path }}/ssl"
+    creates: "{{ nginx_path }}/ssl/dhparams.pem"
+  when: wordpress_sites.values() | map(attribute='ssl') | selectattr('enabled') | list | count
   notify: reload nginx
+  tags: [diffie-hellman]
 
 - name: Grab h5bp/server-configs-nginx
-  git: repo="https://github.com/h5bp/server-configs-nginx.git"
-       dest=/etc/nginx/h5bp-server-configs
-       version=b674df55453988a837e94dc1f71c9a35e8d77528
-       force=yes
+  git:
+    repo: "https://github.com/h5bp/server-configs-nginx.git"
+    dest: "{{ nginx_path }}/h5bp-server-configs"
+    version: c5c6602232e0976d9e69d69874aa84d2a2698265
+    force: yes
 
 - name: Move h5bp configs
-  command: creates=/etc/nginx/h5bp/ cp -R /etc/nginx/h5bp-server-configs/h5bp /etc/nginx/h5bp
-
-- name: Copy conf files
-  copy: src="{{ item }}" dest=/etc/nginx/{{ item | basename }} mode=644
-  with_fileglob: '*'
+  command: rsync -ac --delete --info=NAME {{ nginx_path }}/h5bp-server-configs/h5bp/ {{ nginx_path }}/h5bp
+  register: h5bp_nginx_sync
+  changed_when: h5bp_nginx_sync.stdout != ''
+  notify: reload nginx
 
 - name: Create nginx.conf
-  template: src=nginx.conf.j2 dest=/etc/nginx/nginx.conf
+  template:
+    src: "{{ nginx_conf }}"
+    dest: "{{ nginx_path }}/nginx.conf"
   notify: reload nginx
+  tags: nginx-includes
 
 - name: Disable default server
-  file: path=/etc/nginx/sites-enabled/default state=absent
+  file:
+    path: "{{ nginx_path }}/sites-enabled/default"
+    state: absent
   notify: reload nginx
 
-- name: Enable better default site to drop unknown requests
-  command: creates=/etc/nginx/sites-enabled/no-default.conf cp /etc/nginx/h5bp-server-configs/sites-available/no-default /etc/nginx/sites-enabled/no-default.conf
+- name: Create Nginx available sites
+  template:
+    src: "{{ item.src }}"
+    dest: "{{ nginx_path }}/sites-available/{{ item.src | basename | regex_replace('.j2$', '') }}"
+  with_items: "{{ nginx_sites_confs }}"
+  when: item.enabled | default(true)
   notify: reload nginx
+  tags: nginx-sites
 
-- name: Create base WordPress config
-  template: src=wordpress.conf.j2 dest=/etc/nginx/wordpress.conf
-
-- name: Create base WordPress subdirectory Multisite config
-  template: src=wordpress_multisite_subdirectories.conf.j2 dest=/etc/nginx/wordpress_multisite_subdirectories.conf
+- name: Enable or disable Nginx sites
+  file:
+    path: "{{ nginx_path }}/sites-enabled/{{ item.src | basename | regex_replace('.j2$', '') }}"
+    src: "{{ nginx_path }}/sites-available/{{ item.src | basename | regex_replace('.j2$', '') }}"
+    state: "{{ item.enabled | default(true) | ternary('link', 'absent') }}"
+    force: yes
+  with_items: "{{ nginx_sites_confs }}"
+  notify: reload nginx
+  tags: nginx-sites
