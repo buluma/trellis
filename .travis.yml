@@ -9,3 +9,5 @@ script:
   - ansible-playbook --syntax-check -e env=development deploy.yml
   - ansible-playbook --syntax-check -e env=development dev.yml
   - ansible-playbook --syntax-check -e env=development server.yml
+notifications:
+  webhooks: https://galaxy.ansible.com/api/v1/notifications/
